@@ -19,9 +19,9 @@ namespace zyin.Extensions.AzureFunction.Configuration
     public static class AzureFunctionHostBuilderExtensions
     {
         /// <summary>
-        /// Key vault name settings key. It can be set in:
+        /// Key vault name settings key. It can be set using one of the following ways:
         /// 1. local.settings.json for local development
-        /// 2. appsettings.{env}.json for local development if you are using appsettings.json
+        /// 2. appsettings.{env}.json if you are using environment based appsettings.json
         /// 3. App settings for real Azure environments (production/staging etc.)
         /// </summary>
         private static readonly string KeyVaultName = "KeyVaultName";
@@ -48,7 +48,9 @@ namespace zyin.Extensions.AzureFunction.Configuration
         /// <param name="environments">optional environment list. If not defined only appsettings.json and a chain of appsettings.{environment}.json will be added.
         /// If this paremeter is not null and it defines environment inheritance relationship, then appsettings.{parentenvironment}.json files are also added</param>
         /// <returns>host builder</returns>
-        public static IFunctionsHostBuilder TryAddAppSettingsAndSecrets<T>(this IFunctionsHostBuilder hostBuilder, List<HostEnvironment> environments = null)
+        public static IFunctionsHostBuilder TryAddAppSettingsAndSecrets<T>(
+            this IFunctionsHostBuilder hostBuilder,
+            IEnumerable<HostEnvironment> environments = null)
             where T: FunctionsStartup
         {
             if (hostBuilder == null)
@@ -65,12 +67,13 @@ namespace zyin.Extensions.AzureFunction.Configuration
             // Add appsettings.*.json based on provided environment list
             configBuilder.AddAppSettings<T>(environments);
 
-            // Add user secrets and azure keyvault
+            // Add user secrets
             if (HostEnvironment.IsDevelopment)
             {
                 configBuilder.AddUserSecrets<T>();
             }
 
+            // Try to add key vault
             configBuilder.TryAddAzureKeyVault();
 
             // Replace the configuration in DI container - this is a hack right now since
@@ -81,26 +84,25 @@ namespace zyin.Extensions.AzureFunction.Configuration
             return hostBuilder;
         }
 
+        /// <summary>
         /// Add appsettings.json and appsettings.{environment}.json will be added to configuration chain. They are optional.
-        /// if environments parameter is provided, we'll use it for setting inheritance.
+        /// If environments parameter is provided, we'll use it for setting inheritance.
         /// </summary>
         /// <typeparam name="T">Startup class</typeparam>
         /// <param name="configBuilder">config builder</param>
         /// <param name="environments">environment list where you can define appsettings json inheritance</param>
         /// <returns>host builder</returns>
-        private static IConfigurationBuilder AddAppSettings<T>(this IConfigurationBuilder configBuilder, List<HostEnvironment> environments)
+        private static IConfigurationBuilder AddAppSettings<T>(
+            this IConfigurationBuilder configBuilder,
+            IEnumerable<HostEnvironment> environments)
             where T: FunctionsStartup
         {
-            // Get assembly directory containing the startup class
+            // Assembly containing Startup sits in the bin folder (e.g. home/site/wwwroot/bin).
+            // Setting files sits it's parent folder for both local and Azure environments.
             var startupDirectory = Path.GetDirectoryName(typeof(T).Assembly.Location);
-
-            // Assembly sits in the bin folder (e.g. home/site/wwwroot/bin). Setting files sits it's parent folder.
             var settingsDirectory = Directory.GetParent(startupDirectory).FullName;
 
-            // add json files based on environment inheritence
-            configBuilder.SetBasePath(settingsDirectory).AddJsonFiles(environments);
-
-            return configBuilder;
+            return configBuilder.SetBasePath(settingsDirectory).AddJsonFiles(environments);
         }
 
         /// <summary>
@@ -111,7 +113,9 @@ namespace zyin.Extensions.AzureFunction.Configuration
         /// <param name="configBuilder">config builder</param>
         /// <param name="environments">array of defined environments</param>
         /// <returns>config builder</returns>
-        private static IConfigurationBuilder AddJsonFiles(this IConfigurationBuilder configBuilder, IEnumerable<HostEnvironment> environments)
+        private static IConfigurationBuilder AddJsonFiles(
+            this IConfigurationBuilder configBuilder,
+            IEnumerable<HostEnvironment> environments)
         {
             var currentEnvName = HostEnvironment.Environment;
 
@@ -124,13 +128,14 @@ namespace zyin.Extensions.AzureFunction.Configuration
                 env = new HostEnvironment(currentEnvName);
             }
 
-            // Find the layering hierarchy (sigle direction list from children to parent to grand parent), then reverse it (parent to children).
+            // Find the layering hierarchy (sigle direction list from children to parent), then reverse it (parent to children).
             var layers = new List<HostEnvironment>();
             while (env != null)
             {
                 layers.Add(env);
                 env = env.Parent;
             }
+
             layers.Reverse();
 
             // Add json files based on parent to child chains. Note appsettings.json is always included first.

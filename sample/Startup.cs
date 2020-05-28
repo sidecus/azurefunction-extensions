@@ -3,6 +3,8 @@ using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 
 namespace zyin.Extensions.AzureFunction.Configuration.Sample
 {
+    using System.Collections.Generic;
+    using Microsoft.AspNetCore.Hosting;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using zyin.Extensions.AzureFunction.Configuration;
@@ -18,8 +20,8 @@ namespace zyin.Extensions.AzureFunction.Configuration.Sample
         /// <param name="builder">host builder</param>
         public override void Configure(IFunctionsHostBuilder builder)
         {
-            // Add secrets
-            builder.TryAddAppSettingsAndSecrets<Startup>(SampleHostEnvironment.HostEnvironments);
+            // Add settings and secrets
+            builder.TryAddAppSettingsAndSecrets<Startup>(this.BuildEnvironments());
             
             // Inject IOptions pattern for AppConfig (which can reference KeyVault secrets)
             builder.Services
@@ -28,6 +30,20 @@ namespace zyin.Extensions.AzureFunction.Configuration.Sample
                 {
                     configuration.GetSection("AppConfig").Bind(appConfig);
                 });
+        }
+
+        /// <summary>
+        /// Build known environments for our app.
+        /// In this sample, we have 3 environments: Development (inheriting settings from PPE), PPE (pre-production-env), and Production.
+        /// </summary>
+        /// <returns>Environment list</returns>
+        private IEnumerable<HostEnvironment> BuildEnvironments()
+        {
+            var prod = new HostEnvironment(EnvironmentName.Production);
+            var ppe = new HostEnvironment("PPE");
+            var dev = new HostEnvironment(EnvironmentName.Development, parent: ppe);
+
+            return new List<HostEnvironment>() { prod, dev, ppe };
         }
     }
 }
